@@ -13,9 +13,13 @@
 # packages into an empty root with --initdb. apk verifies every index and
 # package signature against Alpine's public keys, vendored in keys/ and
 # cross-checked against alpinelinux/aports main/alpine-keys (3.24-stable):
+#   x86_64:
 #   4a6a0840 9c102bcc376af1498d549b77bdbfa815ae86faa1d2d82f040e616b18ef2df2d4
 #   5261cecb 12f899e55a7691225603d6fb3324940fc51cd7f133e7ead788663c2b7eecb00c
 #   6165ee59 207e4696d3c05f7cb05966aee557307151f1f00217af4143c1bcaf33b8df733f
+#   aarch64:
+#   58199dcc 73867d92083f2f8ab899a26ccda7ef63dfaa0032a938620eda605558958a8041
+#   616ae350 d11f6b21c61b4274e182eb888883a8ba8acdbf820dcc7a6d82a7d9fc2fd2836d
 # apk only needs chroot for package scripts, which a normal docker build has,
 # so -- unlike Debian's debootstrap -- no privileged pre-build step.
 #
@@ -33,7 +37,9 @@ FROM ${BUILDER_BASE} AS build
 ARG ALPINE_BRANCH=v3.24
 ARG ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine
 ARG APK_TOOLS_STATIC_VERSION=3.0.8-r0
-ARG APK_TOOLS_STATIC_SHA256=c8e2c88c13ba12a12269b79a3543e1190ff8c0ab0beb32b58cadfd5881c619e3
+# One package per architecture, so one sha256 per architecture.
+ARG APK_TOOLS_STATIC_SHA256_X86_64=c8e2c88c13ba12a12269b79a3543e1190ff8c0ab0beb32b58cadfd5881c619e3
+ARG APK_TOOLS_STATIC_SHA256_AARCH64=7e86f8258f3a97ea1c279105950ebf6c9af960891eb499f731b7e5f0af26ff63
 # Weekly cache-buster: SonicSort's build scripts pass the current ISO week, so
 # the package install below re-runs (and picks up fixes) at least weekly.
 ARG OS_PATCH_WEEK=unset
@@ -47,9 +53,14 @@ COPY keys/ /alpine-keys/
 
 RUN set -eux; \
     arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64) sha256="${APK_TOOLS_STATIC_SHA256_X86_64}" ;; \
+        aarch64) sha256="${APK_TOOLS_STATIC_SHA256_AARCH64}" ;; \
+        *) echo "no apk-tools-static sha256 pinned for $arch" >&2; exit 1 ;; \
+    esac; \
     curl -fsSL -o /tmp/apk-tools-static.apk \
         "${ALPINE_MIRROR}/${ALPINE_BRANCH}/main/${arch}/apk-tools-static-${APK_TOOLS_STATIC_VERSION}.apk"; \
-    echo "${APK_TOOLS_STATIC_SHA256}  /tmp/apk-tools-static.apk" | sha256sum -c -; \
+    echo "${sha256}  /tmp/apk-tools-static.apk" | sha256sum -c -; \
     tar -xzf /tmp/apk-tools-static.apk -C /tmp sbin/apk.static 2>/dev/null || [ -x /tmp/sbin/apk.static ]; \
     /tmp/sbin/apk.static --version
 
